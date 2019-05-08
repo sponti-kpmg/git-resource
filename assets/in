@@ -3,11 +3,13 @@
 
 set -e
 
+echo "Start TIME:$(date +%s.%N)" # Performance tests
+
 exec 3>&1 # make stdout available as fd 3 for the result
 exec 1>&2 # redirect all output to stderr for logging
 
 source $(dirname $0)/common.sh
-
+echo "Post Common Script TIME:$(date +%s.%N)" # Performance tests
 destination=$1
 
 if [ -z "$destination" ]; then
@@ -49,9 +51,9 @@ gpg_keyserver=$(jq -r '.source.gpg_keyserver // "hkp://ipv4.pool.sks-keyservers.
 disable_git_lfs=$(jq -r '(.params.disable_git_lfs // false)' < $payload)
 clean_tags=$(jq -r '(.params.clean_tags // false)' < $payload)
 short_ref_format=$(jq -r '(.params.short_ref_format // "%s")' < $payload)
-
+echo "Pre Config Globals TIME:$(date +%s.%N)" # Performance tests
 configure_git_global "${git_config_payload}"
-
+echo "Post Config Globals TIME:$(date +%s.%N)" # Performance tests
 if [ -z "$uri" ]; then
   echo "invalid payload (missing uri):" >&2
   cat $payload >&2
@@ -78,17 +80,23 @@ if [ "$disable_git_lfs" == "true" ]; then
   export GIT_LFS_SKIP_SMUDGE=1
 fi
 
+echo "Pre Clone:$(date +%s.%N)" # Performance tests
 git clone --single-branch $depthflag $uri $branchflag $destination $tagflag
-
+echo "Post Clone TIME:$(date +%s.%N)" # Performance tests
 cd $destination
 
+echo "Pre fetch notes TIME:$(date +%s.%N)" # Performance tests
 git fetch origin refs/notes/*:refs/notes/* $tagflag
+echo "Post fetch notes TIME:$(date +%s.%N)" # Performance tests
 
 if [ "$depth" -gt 0 ]; then
+  echo "Pre shallow_clone TIME:$(date +%s.%N)" # Performance tests
   "$bin_dir"/deepen_shallow_clone_until_ref_is_found_then_check_out "$depth" "$ref" "$tagflag"
 else
+  echo "Pre checkout TIME:$(date +%s.%N)" # Performance tests
   git checkout -q "$ref"
 fi
+echo "Post checkout/shallow_clone TIME:$(date +%s.%N)" # Performance tests
 
 invalid_key() {
   echo "Invalid GPG key in: ${commit_verification_keys}"
@@ -112,9 +120,11 @@ if [ ! -z "${commit_verification_keys}" ] || [ ! -z "${commit_verification_key_i
   git verify-commit $(git rev-list -n 1 $ref) || commit_not_signed
 fi
 
+echo "Pre log/clean/submodule TIME:$(date +%s.%N)" # Performance tests
 git log -1 --oneline
 git clean --force --force -d
 git submodule sync
+echo "Post log/clean/submodule TIME:$(date +%s.%N)" # Performance tests
 
 if [ -f $GIT_CRYPT_KEY_PATH ]; then
   echo "unlocking git repo"
@@ -158,12 +168,12 @@ if [ "$submodules" != "none" ]; then
     fi
   done
 fi
-
+echo "Pre Branch/Fetch loop TIME:$(date +%s.%N)" # Performance tests
 for branch in $fetch; do
   git fetch origin $branch
   git branch $branch FETCH_HEAD
 done
-
+echo "Post Branch/Fetch loop TIME:$(date +%s.%N)" # Performance tests
 if [ "$ref" == "HEAD" ]; then
   return_ref=$(git rev-parse HEAD)
 else
@@ -198,3 +208,4 @@ jq -n "{
   version: {ref: $(echo $return_ref | jq -R .)},
   metadata: $metadata
 }" >&3
+echo "End TIME:$(date +%s.%N)" # Performance tests
